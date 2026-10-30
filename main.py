@@ -1,312 +1,527 @@
-
-import asyncio
-import json
 import os
 import subprocess
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
-import edge_tts
 
-W, H = 1080, 1920
-OUT = Path("output")
+
+# =====================================
+# SETTINGS
+# =====================================
+
+WIDTH = 720
+HEIGHT = 1280
+FPS = 30
+SCENE_SECONDS = 7
+
+BASE = Path(__file__).resolve().parent
+OUT = BASE / "output"
+FRAMES = OUT / "frames"
+CLIPS = OUT / "clips"
+
 OUT.mkdir(exist_ok=True)
+FRAMES.mkdir(exist_ok=True)
+CLIPS.mkdir(exist_ok=True)
+
+
+# =====================================
+# EPISODE STORY
+# =====================================
 
 EPISODE = {
+    "title": "THE MYSTERY OF THE EMPTY MANSION",
     "case": "CASE 001",
-    "part": 1,
-    "title": "THE LOCKED ROOM",
     "narration": (
-        "At exactly two thirteen A M, the famous Blue Moon Diamond vanished. "
-        "The mansion was locked from the inside. Every window was sealed. "
-        "Three suspects were still inside the house. "
-        "Detective Paws noticed something strange near the fireplace. "
-        "A tiny drop of water... in a room where nothing was wet. "
-        "Whoever took the diamond had made one mistake. "
-        "But what was it? Find out in Part Two."
+        "At midnight, Detective Panda received a strange message. "
+        "A mansion had been locked for twenty years. "
+        "But tonight, someone had turned on the lights. "
+        "Panda entered the dark mansion and found muddy footprints. "
+        "Suddenly, a shadow moved behind him. "
+        "Who was inside the mansion? "
+        "The mystery had only just begun."
     ),
     "scenes": [
-        ("2:13 A.M.", "A diamond vanished from a locked mansion."),
-        ("NO WAY IN. NO WAY OUT.", "Every door was locked. Every window was sealed."),
-        ("THREE SUSPECTS.", "The owner. The guest. The housekeeper."),
-        ("ONE STRANGE CLUE.", "A tiny drop of water beside the fireplace."),
-        ("WHO MADE THE MISTAKE?", "The investigation continues in Part 2...")
-    ]
+        {
+            "title": "A STRANGE MESSAGE",
+            "subtitle": "12:00 AM. A mysterious message arrives.",
+            "bg": (15, 24, 54),
+        },
+        {
+            "title": "THE EMPTY MANSION",
+            "subtitle": "Nobody has lived here for twenty years.",
+            "bg": (25, 30, 65),
+        },
+        {
+            "title": "MUDDY FOOTPRINTS",
+            "subtitle": "Someone entered the mansion tonight.",
+            "bg": (34, 25, 48),
+        },
+        {
+            "title": "A SHADOW MOVES",
+            "subtitle": "Panda hears something behind him...",
+            "bg": (10, 12, 30),
+        },
+        {
+            "title": "WHO IS INSIDE?",
+            "subtitle": "To be continued...",
+            "bg": (18, 20, 48),
+        },
+    ],
 }
 
 
-def font(size, bold=False):
-    path = (
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-        if bold else
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-    )
-    if Path(path).exists():
-        return ImageFont.truetype(path, size)
+# =====================================
+# FONT
+# =====================================
+
+def get_font(size):
+    possible_fonts = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf",
+    ]
+
+    for font_path in possible_fonts:
+        if os.path.exists(font_path):
+            return ImageFont.truetype(font_path, size)
+
     return ImageFont.load_default()
 
 
-def centered(draw, text, y, fnt, fill,
-             max_width=940, spacing=12):
-    words = text.split()
-    lines = []
-    line = ""
+# =====================================
+# DRAW PANDA CHARACTER
+# =====================================
 
-    for word in words:
-        test = (line + " " + word).strip()
-        if draw.textbbox((0, 0), test, font=fnt)[2] <= max_width:
-            line = test
-        else:
-            if line:
-                lines.append(line)
-            line = word
+def draw_panda(draw, cx, cy, scale=1.0):
 
-    if line:
-        lines.append(line)
-
-    for item in lines:
-        box = draw.textbbox((0, 0), item, font=fnt)
-        x = (W - (box[2] - box[0])) // 2
-        draw.text(
-            (x, y), item, font=fnt, fill=fill,
-            stroke_width=2, stroke_fill="#101827"
-        )
-        y += (box[3] - box[1]) + spacing
-
-
-def panda(draw, cx, cy, scale=1):
-    r = int(190 * scale)
-
-    # Panda face
+    # Body
     draw.ellipse(
-        (cx-r, cy-r, cx+r, cy+r),
-        fill="#f7f7f2", outline="#111827", width=12
+        (
+            cx - 95 * scale,
+            cy + 70 * scale,
+            cx + 95 * scale,
+            cy + 270 * scale,
+        ),
+        fill=(245, 245, 245),
+        outline=(20, 20, 25),
+        width=5,
     )
 
     # Ears
-    er = int(65 * scale)
     draw.ellipse(
-        (cx-r//2-er, cy-r-er//2,
-         cx-r//2+er, cy-r+er//2),
-        fill="#101827"
-    )
-    draw.ellipse(
-        (cx+r//2-er, cy-r-er//2,
-         cx+r//2+er, cy-r+er//2),
-        fill="#101827"
+        (
+            cx - 100 * scale,
+            cy - 100 * scale,
+            cx - 20 * scale,
+            cy - 20 * scale,
+        ),
+        fill=(15, 15, 20),
     )
 
-    # Eye patches
     draw.ellipse(
-        (cx-int(125*scale), cy-int(55*scale),
-         cx-int(25*scale), cy+int(70*scale)),
-        fill="#101827"
-    )
-    draw.ellipse(
-        (cx+int(25*scale), cy-int(55*scale),
-         cx+int(125*scale), cy+int(70*scale)),
-        fill="#101827"
+        (
+            cx + 20 * scale,
+            cy - 100 * scale,
+            cx + 100 * scale,
+            cy - 20 * scale,
+        ),
+        fill=(15, 15, 20),
     )
 
-    # Eyes and nose
+    # Head
     draw.ellipse(
-        (cx-int(85*scale), cy-int(5*scale),
-         cx-int(55*scale), cy+int(25*scale)),
-        fill="white"
+        (
+            cx - 100 * scale,
+            cy - 90 * scale,
+            cx + 100 * scale,
+            cy + 110 * scale,
+        ),
+        fill=(250, 250, 250),
+        outline=(20, 20, 25),
+        width=5,
     )
+
+    # Eyes
     draw.ellipse(
-        (cx+int(55*scale), cy-int(5*scale),
-         cx+int(85*scale), cy+int(25*scale)),
-        fill="white"
+        (
+            cx - 72 * scale,
+            cy - 35 * scale,
+            cx - 15 * scale,
+            cy + 35 * scale,
+        ),
+        fill=(15, 15, 20),
     )
+
     draw.ellipse(
-        (cx-int(22*scale), cy+int(65*scale),
-         cx+int(22*scale), cy+int(95*scale)),
-        fill="#101827"
+        (
+            cx + 15 * scale,
+            cy - 35 * scale,
+            cx + 72 * scale,
+            cy + 35 * scale,
+        ),
+        fill=(15, 15, 20),
+    )
+
+    # Eye highlights
+    draw.ellipse(
+        (
+            cx - 48 * scale,
+            cy - 20 * scale,
+            cx - 32 * scale,
+            cy - 4 * scale,
+        ),
+        fill="white",
+    )
+
+    draw.ellipse(
+        (
+            cx + 38 * scale,
+            cy - 20 * scale,
+            cx + 54 * scale,
+            cy - 4 * scale,
+        ),
+        fill="white",
+    )
+
+    # Nose
+    draw.ellipse(
+        (
+            cx - 15 * scale,
+            cy + 30 * scale,
+            cx + 15 * scale,
+            cy + 52 * scale,
+        ),
+        fill=(10, 10, 10),
     )
 
     # Detective hat
-    draw.rounded_rectangle(
-        (cx-int(155*scale), cy-r-int(70*scale),
-         cx+int(155*scale), cy-r-int(5*scale)),
-        radius=18, fill="#6b4f35",
-        outline="#111827", width=8
-    )
     draw.rectangle(
-        (cx-int(180*scale), cy-r-int(15*scale),
-         cx+int(180*scale), cy-r+int(10*scale)),
-        fill="#4b3627"
+        (
+            cx - 110 * scale,
+            cy - 110 * scale,
+            cx + 110 * scale,
+            cy - 85 * scale,
+        ),
+        fill=(100, 65, 35),
+    )
+
+    draw.polygon(
+        [
+            (cx - 75 * scale, cy - 110 * scale),
+            (cx - 50 * scale, cy - 165 * scale),
+            (cx + 50 * scale, cy - 165 * scale),
+            (cx + 75 * scale, cy - 110 * scale),
+        ],
+        fill=(120, 80, 40),
     )
 
 
-def make_scene(index, headline, subline):
-    im = Image.new("RGB", (W, H), "#101827")
-    d = ImageDraw.Draw(im)
+# =====================================
+# DRAW MANSION
+# =====================================
 
-    # Night background
-    for y in range(H):
-        t = y / H
-        col = (
-            int(9 + 12*t),
-            int(17 + 13*t),
-            int(32 + 22*t)
+def draw_mansion(draw):
+
+    # Main building
+    draw.rectangle(
+        (130, 420, 590, 900),
+        fill=(45, 43, 58),
+        outline=(10, 10, 20),
+        width=8,
+    )
+
+    # Roof
+    draw.polygon(
+        [
+            (90, 430),
+            (360, 220),
+            (630, 430),
+        ],
+        fill=(25, 25, 40),
+        outline=(5, 5, 10),
+    )
+
+    # Windows
+    for x in [205, 430]:
+        draw.rectangle(
+            (x, 510, x + 90, 650),
+            fill=(255, 190, 70),
+            outline=(10, 10, 10),
+            width=6,
         )
-        d.line((0, y, W, y), fill=col)
 
-    # Moon and mansion
-    d.ellipse((760, 170, 980, 390), fill="#d9e2e8")
-    d.rectangle((0, 1120, W, 1920), fill="#090f1b")
+        draw.line(
+            (x + 45, 510, x + 45, 650),
+            fill=(30, 25, 20),
+            width=5,
+        )
 
-    d.polygon(
-        [(80,1120), (80,850), (260,730),
-         (440,850), (440,1120)],
-        fill="#182536"
-    )
-    d.polygon(
-        [(590,1120), (590,820), (820,700),
-         (1030,820), (1030,1120)],
-        fill="#182536"
-    )
+        draw.line(
+            (x, 580, x + 90, 580),
+            fill=(30, 25, 20),
+            width=5,
+        )
 
-    for x in [150, 250, 680, 800, 920]:
-        d.rectangle((x, 900, x+55, 1000), fill="#d49a48")
-
-    # Panda detective
-    d.ellipse(
-        (190,700,890,1400),
-        outline="#263b50", width=8
-    )
-    panda(d, 540, 970, 1.05)
-
-    # Text
-    centered(
-        d, "PANDA DETECTIVE", 120,
-        font(48, True), "#f2c879"
-    )
-    centered(
-        d, headline, 1450,
-        font(66, True), "#ffffff", 960, 16
-    )
-    centered(
-        d, subline, 1635,
-        font(39), "#d7e2ef", 930, 14
-    )
-    centered(
-        d, "CASE 001  •  PART 01  •  SCENE "
-        + str(index+1) + "/5",
-        1830, font(25, True), "#f2c879"
+    # Door
+    draw.rectangle(
+        (300, 700, 420, 900),
+        fill=(20, 18, 28),
+        outline=(5, 5, 10),
+        width=6,
     )
 
-    path = OUT / f"scene_{index:02d}.png"
-    im.save(path)
-    return path
-
-
-async def make_voice(text, path):
-    voice = os.getenv("TTS_VOICE", "en-US-GuyNeural")
-    communicate = edge_tts.Communicate(
-        text, voice, rate="-5%", volume="+0%"
+    draw.ellipse(
+        (390, 790, 405, 805),
+        fill=(240, 190, 70),
     )
-    await communicate.save(str(path))
 
 
-def run(cmd):
-    subprocess.run(cmd, check=True)
+# =====================================
+# CREATE SCENE IMAGE
+# =====================================
 
+def make_scene(index, scene):
+
+    image = Image.new(
+        "RGB",
+        (WIDTH, HEIGHT),
+        scene["bg"],
+    )
+
+    draw = ImageDraw.Draw(image)
+
+    # Background stars
+    for x in range(35, WIDTH, 110):
+        for y in range(80, 400, 120):
+            draw.ellipse(
+                (x, y, x + 5, y + 5),
+                fill=(180, 190, 220),
+            )
+
+    # Moon
+    draw.ellipse(
+        (510, 100, 640, 230),
+        fill=(245, 225, 170),
+    )
+
+    # Mansion
+    draw_mansion(draw)
+
+    # Panda
+    if index in [0, 1, 3, 4]:
+        draw_panda(draw, 360, 920, 0.85)
+
+    # Footprints
+    if index == 2:
+        for i in range(5):
+            x = 230 + i * 55
+            y = 850 - i * 65
+
+            draw.ellipse(
+                (x, y, x + 25, y + 45),
+                fill=(15, 15, 20),
+            )
+
+    # Shadow
+    if index == 3:
+        draw.ellipse(
+            (470, 750, 650, 1080),
+            fill=(5, 5, 12),
+        )
+
+    # Top label
+    draw.rounded_rectangle(
+        (35, 35, 685, 115),
+        radius=20,
+        fill=(10, 10, 25),
+    )
+
+    draw.text(
+        (60, 55),
+        EPISODE["case"],
+        font=get_font(32),
+        fill=(255, 205, 80),
+    )
+
+    # Scene title
+    title_font = get_font(38)
+
+    draw.rounded_rectangle(
+        (25, 1080, 695, 1235),
+        radius=25,
+        fill=(8, 10, 25),
+    )
+
+    draw.text(
+        (50, 1095),
+        scene["title"],
+        font=title_font,
+        fill=(255, 215, 110),
+    )
+
+    # Subtitle
+    draw.text(
+        (50, 1160),
+        scene["subtitle"],
+        font=get_font(21),
+        fill=(240, 240, 240),
+    )
+
+    image.save(FRAMES / f"scene_{index:02d}.png")
+
+
+# =====================================
+# CREATE VOICE
+# =====================================
+
+def make_voice(text, path):
+
+    subprocess.run(
+        [
+            "espeak-ng",
+            "-v", "en-us",
+            "-s", "145",
+            "-w", str(path),
+            text,
+        ],
+        check=True,
+    )
+
+
+# =====================================
+# CREATE VIDEO CLIPS
+# =====================================
+
+def make_video_clip(index):
+
+    image_path = FRAMES / f"scene_{index:02d}.png"
+    clip_path = CLIPS / f"clip_{index:02d}.mp4"
+
+    total_frames = FPS * SCENE_SECONDS
+
+    zoom_filter = (
+        f"zoompan=z='min(zoom+0.0005,1.08)':"
+        f"d={total_frames}:"
+        f"s={WIDTH}x{HEIGHT}:"
+        f"fps={FPS},"
+        f"format=yuv420p"
+    )
+
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-loop", "1",
+            "-i", str(image_path),
+            "-vf", zoom_filter,
+            "-t", str(SCENE_SECONDS),
+            "-r", str(FPS),
+            "-c:v", "libx264",
+            "-pix_fmt", "yuv420p",
+            str(clip_path),
+        ],
+        check=True,
+    )
+
+    return clip_path
+
+
+# =====================================
+# JOIN VIDEO CLIPS
+# =====================================
+
+def join_clips():
+
+    list_file = OUT / "clips.txt"
+
+    with open(list_file, "w", encoding="utf-8") as file:
+        for index in range(len(EPISODE["scenes"])):
+            clip = CLIPS / f"clip_{index:02d}.mp4"
+            file.write(f"file '{clip.resolve()}'\n")
+
+    silent_video = OUT / "silent_video.mp4"
+
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-f", "concat",
+            "-safe", "0",
+            "-i", str(list_file),
+            "-c", "copy",
+            str(silent_video),
+        ],
+        check=True,
+    )
+
+    return silent_video
+
+
+# =====================================
+# ADD VOICE TO VIDEO
+# =====================================
+
+def add_audio(video, audio):
+
+    final_video = OUT / "Panda_Detective_Case001_Part01.mp4"
+
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-i", str(video),
+            "-i", str(audio),
+            "-map", "0:v:0",
+            "-map", "1:a:0",
+            "-af", "apad",
+            "-shortest",
+            "-c:v", "copy",
+            "-c:a", "aac",
+            "-b:a", "128k",
+            "-movflags", "+faststart",
+            str(final_video),
+        ],
+        check=True,
+    )
+
+    return final_video
+
+
+# =====================================
+# MAIN PROGRAM
+# =====================================
 
 def main():
-    OUT.mkdir(exist_ok=True)
 
-    scene_files = [
-        make_scene(i, headline, subline)
-        for i, (headline, subline)
-        in enumerate(EPISODE["scenes"])
-    ]
+    print("PANDA DETECTIVE VIDEO BUILDER STARTED")
 
-    audio = OUT / "voice.mp3"
-    asyncio.run(make_voice(EPISODE["narration"], audio))
+    # Create scene images
+    for index, scene in enumerate(EPISODE["scenes"]):
+        print(f"Creating scene {index + 1}...")
+        make_scene(index, scene)
 
-    clips = []
+    # Create voice
+    print("Creating detective voice...")
 
-    for i, img in enumerate(scene_files):
-        clip = OUT / f"clip_{i:02d}.mp4"
+    audio = OUT / "voice.wav"
+    make_voice(EPISODE["narration"], audio)
 
-        run([
-            "ffmpeg", "-y",
-            "-loop", "1",
-            "-i", str(img),
-            "-t", "7",
-            "-vf",
-            "scale=1080:1920,zoompan="
-            "z='min(zoom+0.0005,1.04)':"
-            "d=175:s=1080x1920:fps=25,format=yuv420p",
-            "-r", "25",
-            "-c:v", "libx264",
-            "-preset", "ultrafast",
-            "-pix_fmt", "yuv420p",
-            str(clip)
-        ])
+    # Create video clips
+    for index in range(len(EPISODE["scenes"])):
+        print(f"Rendering video clip {index + 1}...")
+        make_video_clip(index)
 
-        clips.append(clip)
+    # Join clips
+    print("Joining video scenes...")
 
-    concat = OUT / "concat.txt"
-    concat.write_text(
-        "".join(
-            f"file '{p.resolve()}'\n"
-            for p in clips
-        )
-    )
+    silent_video = join_clips()
 
-    silent = OUT / "silent.mp4"
+    # Add voice
+    print("Adding voice to video...")
 
-    run([
-        "ffmpeg", "-y",
-        "-f", "concat",
-        "-safe", "0",
-        "-i", str(concat),
-        "-c", "copy",
-        str(silent)
-    ])
+    final_video = add_audio(silent_video, audio)
 
-    final = OUT / "Panda_Detective_Case001_Part01.mp4"
-
-    run([
-        "ffmpeg", "-y",
-        "-i", str(silent),
-        "-i", str(audio),
-        "-map", "0:v:0",
-        "-map", "1:a:0",
-        "-af", "apad",
-        "-shortest",
-        "-c:v", "copy",
-        "-c:a", "aac",
-        "-b:a", "128k",
-        "-movflags", "+faststart",
-        str(final)
-    ])
-
-    metadata = {
-        "title": "The Locked Room | Panda Detective | Case 001 Part 1 #Shorts",
-        "description": (
-            "A diamond vanished from a locked mansion. "
-            "Detective Paws finds one impossible clue. "
-            "Part 2 coming soon. "
-            "#mystery #detective #animation #shorts"
-        ),
-        "tags": [
-            "Panda Detective",
-            "mystery",
-            "detective story",
-            "animated shorts",
-            "shorts"
-        ]
-    }
-
-    (OUT / "metadata.json").write_text(
-        json.dumps(metadata, indent=2)
-    )
-
-    print(f"Created: {final}")
+    print("VIDEO CREATED SUCCESSFULLY!")
+    print(f"Output file: {final_video}")
 
 
 if __name__ == "__main__":
